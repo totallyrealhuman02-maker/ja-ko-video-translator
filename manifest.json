@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "일본어 영상 실시간 번역기",
+  "version": "1.0",
+  "description": "네이버 클라우드 API를 사용하여 영상의 일본어를 한국어로 번역합니다.",
+  "permissions": [
+    "tabCapture",
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://clovaspeech-gw.ncloud.com/*",
+    "https://papago.apigw.ntruss.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content_script.js"],
+      "css": ["style.css"]
+    }
+  ]
+}

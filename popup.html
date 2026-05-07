@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Translator Settings</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h2>NCP API Settings</h2>
+    <div class="input-group">
+      <label>Papago Client ID</label>
+      <input type="text" id="papagoId" placeholder="Client ID">
+    </div>
+    <div class="input-group">
+      <label>Papago Client Secret</label>
+      <input type="password" id="papagoSecret" placeholder="Client Secret">
+    </div>
+    <div class="input-group">
+      <label>CLOVA Secret Key</label>
+      <input type="password" id="clovaSecret" placeholder="Secret Key">
+    </div>
+    <button id="saveBtn">Save Settings</button>
+    <hr>
+    <button id="startBtn">Start Translation</button>
+    <button id="stopBtn" disabled>Stop Translation</button>
+    <div id="status">Status: Idle</div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
