@@ -1,0 +1,18 @@
+/* Content Script Overlay */
+#ja-ko-subtitle-overlay {
+  position: fixed;
+  bottom: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 20px;
+  z-index: 999999;
+  pointer-events: none;
+  text-align: center;
+  min-width: 200px;
+  line-height: 1.4;
+  font-family: sans-serif;
+}
