@@ -1,37 +1,41 @@
 (function() {
+  // 이미 로드된 경우 중복 실행 방지
+  if (window.hasJaKoTranslatorLoaded) return;
+  window.hasJaKoTranslatorLoaded = true;
+
   let overlay = null;
 
   function createOverlay() {
-    if (document.getElementById('ja-ko-subtitle-overlay')) {
-      overlay = document.getElementById('ja-ko-subtitle-overlay');
-      return;
-    }
+    overlay = document.getElementById('ja-ko-subtitle-overlay');
+    if (overlay) return;
     
     overlay = document.createElement('div');
     overlay.id = 'ja-ko-subtitle-overlay';
-    overlay.style.cssText = `
-      position: fixed !important;
-      bottom: 10% !important;
-      left: 50% !important;
-      transform: translateX(-50%) !important;
-      background-color: rgba(0, 0, 0, 0.8) !important;
-      color: white !important;
-      padding: 12px 24px !important;
-      border-radius: 8px !important;
-      font-size: 22px !important;
-      z-index: 2147483647 !important;
-      pointer-events: none !important;
-      text-align: center !important;
-      min-width: 250px !important;
-      max-width: 80% !important;
-      line-height: 1.5 !important;
-      font-family: sans-serif !important;
-      display: none;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
-    `;
+    // 스타일을 JS에서 직접 제어하여 우선순위 보장
+    Object.assign(overlay.style, {
+      position: 'fixed',
+      bottom: '10%',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      color: 'white',
+      padding: '14px 28px',
+      borderRadius: '10px',
+      fontSize: '24px',
+      zIndex: '2147483647',
+      pointerEvents: 'none',
+      textAlign: 'center',
+      minWidth: '300px',
+      maxWidth: '85%',
+      lineHeight: '1.4',
+      fontFamily: '"Apple SD Gothic Neo", "Malgun Gothic", sans-serif',
+      display: 'none',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+      border: '1px solid rgba(255,255,255,0.1)'
+    });
+    
     overlay.innerText = 'Waiting for subtitles...';
     document.body.appendChild(overlay);
-    console.log('Subtitle overlay created');
   }
 
   function showSubtitle(text) {
@@ -47,10 +51,9 @@
   }
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('Message received in content script:', request.action);
     if (request.action === 'init_subtitle') {
       createOverlay();
-      showSubtitle('Translator active. Waiting for audio...');
+      showSubtitle('Translator Ready. Listening...');
       sendResponse({ success: true });
     } else if (request.action === 'show_subtitle') {
       showSubtitle(request.text);
@@ -62,10 +65,6 @@
     return true;
   });
 
-  // 초기 로드 시 생성 시도 (이미 실행 중인 경우를 위해)
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    createOverlay();
-  } else {
-    document.addEventListener('DOMContentLoaded', createOverlay);
-  }
+  // 초기 생성 시도
+  createOverlay();
 })();
