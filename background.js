@@ -6,7 +6,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     stopCapture();
     sendResponse({ success: true });
   } else if (request.action === 'process_audio_chunk') {
-    // offscreen에서 보낸 오디오 데이터 처리
     const blob = new Blob([new Uint8Array(request.payload)], { type: 'audio/webm' });
     processAudioChunk(blob);
   }
@@ -14,27 +13,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function startCapture(sendResponse) {
   try {
-    // 1. Offscreen Document 생성 (이미 있으면 무시됨)
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) {
+      sendResponse({ success: false, error: 'No active tab found' });
+      return;
+    }
+
+    // 1. Content Script에 초기화 메시지 전송
+    await chrome.tabs.sendMessage(tab.id, { action: 'init_subtitle' }).catch(err => {
+      console.warn('Content script not ready, injecting...', err);
+      // 필요한 경우 여기서 스크립트 주입 로직 추가 가능
+    });
+
+    // 2. Offscreen Document 생성
     await chrome.offscreen.createDocument({
       url: 'offscreen.html',
       reasons: ['USER_MEDIA'],
       justification: 'Capturing tab audio for translation'
     }).catch(() => {});
 
-    // 2. 현재 탭의 streamId 가져오기
-    chrome.tabCapture.getMediaStreamId({ targetTabId: (await chrome.tabs.query({active: true, currentWindow: true}))[0].id }, (streamId) => {
+    // 3. streamId 가져오기
+    chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }, (streamId) => {
       if (!streamId) {
         sendResponse({ success: false, error: 'Failed to get stream ID' });
         return;
       }
-      // 3. Offscreen에 캡처 시작 명령 전송
+      
       chrome.runtime.sendMessage({
         target: 'offscreen',
         action: 'start_capture',
         streamId: streamId
       });
       
-      chrome.storage.local.set({ isRunning: true });
+      chrome.storage.local.set({ isRunning: true, activeTabId: tab.id });
       sendResponse({ success: true });
     });
   } catch (err) {
@@ -43,39 +54,37 @@ async function startCapture(sendResponse) {
 }
 
 async function stopCapture() {
-  chrome.runtime.sendMessage({
-    target: 'offscreen',
-    action: 'stop_capture'
-  });
+  const { activeTabId } = await chrome.storage.local.get('activeTabId');
   
+  chrome.runtime.sendMessage({ target: 'offscreen', action: 'stop_capture' });
   chrome.storage.local.set({ isRunning: false });
   
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]) {
-      chrome.tabs.sendMessage(tabs[0].id, { action: 'clear_subtitle' });
-    }
-  });
+  if (activeTabId) {
+    chrome.tabs.sendMessage(activeTabId, { action: 'clear_subtitle' }).catch(() => {});
+  }
 
-  // Offscreen Document 닫기
   chrome.offscreen.closeDocument().catch(() => {});
 }
 
 async function processAudioChunk(blob) {
-  const settings = await chrome.storage.local.get(['papagoId', 'papagoSecret', 'clovaSecret']);
+  const settings = await chrome.storage.local.get(['papagoId', 'papagoSecret', 'activeTabId']);
   if (!settings.papagoId || !settings.papagoSecret) return;
 
+  console.log('Processing audio chunk...');
   const recognizedText = await callClovaSTT(blob, settings.papagoId, settings.papagoSecret);
   
   if (recognizedText && recognizedText.trim()) {
+    console.log('Recognized:', recognizedText);
     const translatedText = await callPapagoTranslate(recognizedText, settings.papagoId, settings.papagoSecret);
     
-    if (translatedText) {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) {
-          chrome.tabs.sendMessage(tabs[0].id, { action: 'show_subtitle', text: translatedText });
-        }
+    if (translatedText && settings.activeTabId) {
+      console.log('Translated:', translatedText);
+      chrome.tabs.sendMessage(settings.activeTabId, { action: 'show_subtitle', text: translatedText }).catch(err => {
+        console.error('Failed to send subtitle to tab:', err);
       });
     }
+  } else {
+    console.log('No speech recognized in this chunk.');
   }
 }
 
@@ -94,7 +103,7 @@ async function callClovaSTT(blob, clientId, clientSecret) {
     const data = await response.json();
     return data.text;
   } catch (err) {
-    console.error('STT Error:', err);
+    console.error('STT API Error:', err);
     return null;
   }
 }
@@ -114,7 +123,7 @@ async function callPapagoTranslate(text, clientId, clientSecret) {
     const data = await response.json();
     return data.message?.result?.translatedText;
   } catch (err) {
-    console.error('Translate Error:', err);
+    console.error('Papago API Error:', err);
     return null;
   }
 }
