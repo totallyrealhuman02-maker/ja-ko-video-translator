@@ -7,7 +7,8 @@
     "tabCapture",
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "offscreen"
   ],
   "host_permissions": [
     "https://clovaspeech-gw.ncloud.com/*",
