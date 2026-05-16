@@ -12,7 +12,8 @@
   ],
   "host_permissions": [
     "https://clovaspeech-gw.ncloud.com/*",
-    "https://papago.apigw.ntruss.com/*"
+    "https://papago.apigw.ntruss.com/*",
+    "https://naveropenapi.apigw.ntruss.com/*"
   ],
   "background": {
     "service_worker": "background.js"

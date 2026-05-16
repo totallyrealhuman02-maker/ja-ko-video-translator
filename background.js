@@ -1,9 +1,9 @@
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'start_translation') {
-    startCapture(sendResponse);
+    handleStart(request.streamId, request.tabId, sendResponse);
     return true; 
   } else if (request.action === 'stop_translation') {
-    stopCapture();
+    handleStop();
     sendResponse({ success: true });
   } else if (request.action === 'process_audio_chunk') {
     const blob = new Blob([new Uint8Array(request.payload)], { type: 'audio/webm' });
@@ -11,69 +11,53 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-async function startCapture(sendResponse) {
+async function handleStart(streamId, tabId, sendResponse) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab) {
-      sendResponse({ success: false, error: 'No active tab found' });
-      return;
-    }
-
-    // 1. Content Script 강제 주입 (이미 로드되었더라도 안전하게 다시 시도)
+    // 1. Content Script 강제 주입
     try {
       await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
+        target: { tabId: tabId },
         files: ['content_script.js']
       });
       await chrome.scripting.insertCSS({
-        target: { tabId: tab.id },
+        target: { tabId: tabId },
         files: ['overlay.css']
       });
     } catch (e) {
-      console.log('Script injection skipped or failed:', e);
+      console.log('Script injection skipped:', e);
     }
 
-    // 2. 초기화 메시지 전송
-    await chrome.tabs.sendMessage(tab.id, { action: 'init_subtitle' }).catch(() => {});
+    // 2. 초기화 메시지
+    await chrome.tabs.sendMessage(tabId, { action: 'init_subtitle' }).catch(() => {});
 
-    // 3. Offscreen Document 생성
+    // 3. Offscreen Document
     await chrome.offscreen.createDocument({
       url: 'offscreen.html',
       reasons: ['USER_MEDIA'],
       justification: 'Capturing tab audio for translation'
     }).catch(() => {});
 
-    // 4. streamId 가져오기
-    chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }, (streamId) => {
-      if (!streamId) {
-        sendResponse({ success: false, error: 'Failed to get stream ID' });
-        return;
-      }
-      
-      chrome.runtime.sendMessage({
-        target: 'offscreen',
-        action: 'start_capture',
-        streamId: streamId
-      });
-      
-      chrome.storage.local.set({ isRunning: true, activeTabId: tab.id });
-      sendResponse({ success: true });
+    // 4. Offscreen에 캡처 시작 명령 전송
+    chrome.runtime.sendMessage({
+      target: 'offscreen',
+      action: 'start_capture',
+      streamId: streamId
     });
+    
+    chrome.storage.local.set({ isRunning: true, activeTabId: tabId });
+    sendResponse({ success: true });
   } catch (err) {
     sendResponse({ success: false, error: err.message });
   }
 }
 
-async function stopCapture() {
+async function handleStop() {
   const { activeTabId } = await chrome.storage.local.get('activeTabId');
-  
   chrome.runtime.sendMessage({ target: 'offscreen', action: 'stop_capture' });
   chrome.storage.local.set({ isRunning: false });
-  
   if (activeTabId) {
     chrome.tabs.sendMessage(activeTabId, { action: 'clear_subtitle' }).catch(() => {});
   }
-
   chrome.offscreen.closeDocument().catch(() => {});
 }
 
@@ -81,13 +65,10 @@ async function processAudioChunk(blob) {
   const settings = await chrome.storage.local.get(['papagoId', 'papagoSecret', 'clovaSecret', 'activeTabId']);
   if (!settings.clovaSecret || !settings.activeTabId) return;
 
-  // 1. CLOVA Speech (CSR) 호출 - 사용자가 입력한 clovaSecret 사용
   const recognizedText = await callClovaSTT(blob, settings.clovaSecret);
   
   if (recognizedText && recognizedText.trim()) {
-    // 2. Papago 번역 호출
     const translatedText = await callPapagoTranslate(recognizedText, settings.papagoId, settings.papagoSecret);
-    
     if (translatedText) {
       chrome.tabs.sendMessage(settings.activeTabId, { action: 'show_subtitle', text: translatedText }).catch(() => {});
     }
@@ -96,7 +77,6 @@ async function processAudioChunk(blob) {
 
 async function callClovaSTT(blob, secretKey) {
   try {
-    // CSR API (Secret Key 사용 방식)
     const response = await fetch('https://naveropenapi.apigw.ntruss.com/recog/v1/stt?lang=jpn', {
       method: 'POST',
       headers: {
@@ -105,7 +85,6 @@ async function callClovaSTT(blob, secretKey) {
       },
       body: blob
     });
-    
     const data = await response.json();
     return data.text;
   } catch (err) {
@@ -125,7 +104,6 @@ async function callPapagoTranslate(text, clientId, clientSecret) {
       },
       body: `source=ja&target=ko&text=${encodeURIComponent(text)}`
     });
-    
     const data = await response.json();
     return data.message?.result?.translatedText;
   } catch (err) {
