@@ -13,7 +13,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function handleStart(streamId, tabId, sendResponse) {
   try {
-    // 1. Content Script 강제 주입
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tabId },
@@ -27,17 +26,14 @@ async function handleStart(streamId, tabId, sendResponse) {
       console.log('Script injection skipped:', e);
     }
 
-    // 2. 초기화 메시지
     await chrome.tabs.sendMessage(tabId, { action: 'init_subtitle' }).catch(() => {});
 
-    // 3. Offscreen Document
     await chrome.offscreen.createDocument({
       url: 'offscreen.html',
       reasons: ['USER_MEDIA'],
       justification: 'Capturing tab audio for translation'
     }).catch(() => {});
 
-    // 4. Offscreen에 캡처 시작 명령 전송
     chrome.runtime.sendMessage({
       target: 'offscreen',
       action: 'start_capture',
@@ -63,32 +59,43 @@ async function handleStop() {
 
 async function processAudioChunk(blob) {
   const settings = await chrome.storage.local.get(['papagoId', 'papagoSecret', 'clovaSecret', 'activeTabId']);
-  if (!settings.clovaSecret || !settings.activeTabId) return;
+  if (!settings.clovaSecret || !settings.activeTabId || !settings.papagoId) return;
 
-  const recognizedText = await callClovaSTT(blob, settings.clovaSecret);
+  console.log('Requesting STT...');
+  // CSR API는 ID와 Secret(Key)이 모두 필요합니다.
+  const recognizedText = await callClovaSTT(blob, settings.papagoId, settings.clovaSecret);
   
   if (recognizedText && recognizedText.trim()) {
+    console.log('Recognized Text:', recognizedText);
     const translatedText = await callPapagoTranslate(recognizedText, settings.papagoId, settings.papagoSecret);
     if (translatedText) {
+      console.log('Translated Text:', translatedText);
       chrome.tabs.sendMessage(settings.activeTabId, { action: 'show_subtitle', text: translatedText }).catch(() => {});
     }
+  } else {
+    console.log('No text recognized.');
   }
 }
 
-async function callClovaSTT(blob, secretKey) {
+async function callClovaSTT(blob, clientId, clientSecret) {
   try {
     const response = await fetch('https://naveropenapi.apigw.ntruss.com/recog/v1/stt?lang=jpn', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/octet-stream',
-        'X-NCP-APIGW-API-KEY': secretKey
+        'X-NCP-APIGW-API-KEY-ID': clientId,
+        'X-NCP-APIGW-API-KEY': clientSecret
       },
       body: blob
     });
     const data = await response.json();
+    if (data.error) {
+      console.error('STT API Error Response:', data);
+      return null;
+    }
     return data.text;
   } catch (err) {
-    console.error('STT API Error:', err);
+    console.error('STT Network/Fetch Error:', err);
     return null;
   }
 }

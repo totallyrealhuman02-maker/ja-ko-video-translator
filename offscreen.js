@@ -22,16 +22,15 @@ async function startCapture(streamId) {
       video: false
     });
 
-    // 오디오를 다시 스피커로 출력 (사용자가 들을 수 있게)
     const audioContext = new AudioContext();
     const source = audioContext.createMediaStreamSource(stream);
     source.connect(audioContext.destination);
 
+    // 오디오 형식 최적화 시도
     mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
     
     mediaRecorder.ondataavailable = async (event) => {
       if (event.data.size > 0) {
-        // Blob을 ArrayBuffer로 변환하여 background로 전송
         const buffer = await event.data.arrayBuffer();
         chrome.runtime.sendMessage({
           action: 'process_audio_chunk',
@@ -40,7 +39,8 @@ async function startCapture(streamId) {
       }
     };
 
-    mediaRecorder.start(3000);
+    // 5초 주기로 전송하여 문맥 파악 향상
+    mediaRecorder.start(5000);
   } catch (err) {
     console.error('Offscreen capture error:', err);
   }
